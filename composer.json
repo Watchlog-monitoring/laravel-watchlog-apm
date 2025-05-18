@@ -1,0 +1,28 @@
+{
+    "name": "watchlog/laravel-apm",
+    "description": "Lightweight APM integration for Laravel apps using Watchlog",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Mohammadreza",
+            "email": "mohammadnajm75@email.com"
+        }
+    ],
+    "require": {
+        "php": ">=7.4",
+        "illuminate/support": "^8.0|^9.0|^10.0|^11.0|^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Watchlog\\LaravelAPM\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Watchlog\\LaravelAPM\\WatchlogAPMServiceProvider"
+            ]
+        }
+    }
+}
