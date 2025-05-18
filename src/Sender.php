@@ -4,18 +4,20 @@ namespace Watchlog\LaravelAPM;
 
 class Sender
 {
-    protected $agentUrl;
+    protected string $agentUrl;
 
-    public function __construct($agentUrl = 'http://localhost:3774/apm')
+    public function __construct(string $agentUrl = 'http://localhost:3774/apm')
     {
         $this->agentUrl = $agentUrl;
     }
 
-    public function flush()
+    public function flush(): void
     {
         $metrics = Collector::flush();
 
-        if (empty($metrics)) return;
+        if (empty($metrics)) {
+            return; // چیزی برای ارسال وجود ندارد
+        }
 
         $payload = json_encode([
             'collected_at' => date('c'),
@@ -32,8 +34,9 @@ class Sender
             curl_setopt($ch, CURLOPT_TIMEOUT, 3);
             curl_exec($ch);
             curl_close($ch);
-        } catch (\Exception $e) {
-            // optional: log to apm-error.log
+        } catch (\Throwable $e) {
+            // ارسال ناموفق، می‌تونی اینجا لاگ بزنی به فایل error مثلا
+            // file_put_contents(storage_path('logs/apm-error.log'), $e->getMessage(), FILE_APPEND);
         }
     }
 }

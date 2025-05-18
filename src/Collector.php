@@ -4,53 +4,83 @@ namespace Watchlog\LaravelAPM;
 
 class Collector
 {
-    protected static array $grouped = [];
+    protected static string $bufferFile = '';
+
+    protected static function getBufferFile(): string
+    {
+        if (!self::$bufferFile) {
+            self::$bufferFile = storage_path('logs/apm-buffer.json');
+        }
+
+        return self::$bufferFile;
+    }
 
     public static function record(array $metric): void
     {
-        if ($metric['type'] !== 'request') return;
-
-        $key = "{$metric['service']}|{$metric['path']}|{$metric['method']}";
-        $group = &self::$grouped[$key];
-
-        if (!isset($group)) {
-            $group = [
-                'type' => 'aggregated_request',
-                'service' => $metric['service'],
-                'path' => $metric['path'],
-                'method' => $metric['method'],
-                'request_count' => 0,
-                'error_count' => 0,
-                'total_duration' => 0,
-                'max_duration' => 0,
-                'total_memory' => [
-                    'rss' => 0,
-                    'heapUsed' => 0,
-                    'heapTotal' => 0
-                ]
-            ];
-        }
-
-        $group['request_count']++;
-        if ($metric['statusCode'] >= 500) {
-            $group['error_count']++;
-        }
-
-        $group['total_duration'] += $metric['duration'];
-        $group['max_duration'] = max($group['max_duration'], $metric['duration']);
-
-        $mem = $metric['memory'];
-        $group['total_memory']['rss'] += $mem['rss'];
-        $group['total_memory']['heapUsed'] += $mem['heapUsed'];
-        $group['total_memory']['heapTotal'] += $mem['heapTotal'];
+        $file = self::getBufferFile();
+        file_put_contents($file, json_encode($metric) . "\n", FILE_APPEND);
     }
 
     public static function flush(): array
     {
+        $file = self::getBufferFile();
+
+        if (!file_exists($file)) return [];
+
+        $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (empty($lines)) return [];
+
+        // پاک‌سازی فایل بعد از خواندن
+        file_put_contents($file, '');
+
+        $grouped = [];
+
+        foreach ($lines as $line) {
+            $metric = json_decode($line, true);
+            if (!is_array($metric) || ($metric['type'] ?? '') !== 'request') continue;
+
+            $key = "{$metric['service']}|{$metric['path']}|{$metric['method']}";
+            $group = &$grouped[$key];
+
+            if (!isset($group)) {
+                $group = [
+                    'type' => 'aggregated_request',
+                    'service' => $metric['service'],
+                    'path' => $metric['path'],
+                    'method' => $metric['method'],
+                    'request_count' => 0,
+                    'error_count' => 0,
+                    'total_duration' => 0,
+                    'max_duration' => 0,
+                    'total_memory' => [
+                        'rss' => 0,
+                        'heapUsed' => 0,
+                        'heapTotal' => 0
+                    ]
+                ];
+            }
+
+            $group['request_count']++;
+            if (($metric['statusCode'] ?? 0) >= 500) {
+                $group['error_count']++;
+            }
+
+            $group['total_duration'] += $metric['duration'] ?? 0;
+            $group['max_duration'] = max($group['max_duration'], $metric['duration'] ?? 0);
+
+            if (!empty($metric['memory'])) {
+                $group['total_memory']['rss'] += $metric['memory']['rss'] ?? 0;
+                $group['total_memory']['heapUsed'] += $metric['memory']['heapUsed'] ?? 0;
+                $group['total_memory']['heapTotal'] += $metric['memory']['heapTotal'] ?? 0;
+            }
+        }
+
+        // خروجی نهایی آماده ارسال به Agent
         $result = [];
 
-        foreach (self::$grouped as $group) {
+        foreach ($grouped as $group) {
             $count = max(1, $group['request_count']);
+
             $result[] = [
                 'type' => $group['type'],
                 'service' => $group['service'],
@@ -68,7 +98,6 @@ class Collector
             ];
         }
 
-        self::$grouped = []; // reset
         return $result;
     }
 }

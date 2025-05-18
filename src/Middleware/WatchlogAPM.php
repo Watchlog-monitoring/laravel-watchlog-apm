@@ -12,16 +12,18 @@ class WatchlogAPM
     public function handle(Request $request, Closure $next)
     {
         $start = microtime(true);
-
-
+        $service = env('WATCHLOG_APM_SERVICE') ?? env('APP_NAME', 'laravel-app');
         $response = $next($request);
 
         $duration = (microtime(true) - $start) * 1000;
 
+        // مسیر واقعی route، مثل hello/{id}
+        $path = $request->route()?->uri() ?? $request->path();
+
         $metric = [
             'type' => 'request',
-            'service' => 'laravel-app',
-            'path' => $request->path(),
+            'service' => $service,
+            'path' => $path,
             'method' => $request->method(),
             'statusCode' => $response->getStatusCode(),
             'duration' => round($duration, 2),
@@ -33,20 +35,19 @@ class WatchlogAPM
             ]
         ];
 
+        // ذخیره متریک در فایل بافر
         Collector::record($metric);
 
-        // ارسال خودکار فقط هر ۱۰ ثانیه
+        // ارسال فقط اگر 10 ثانیه از flush قبلی گذشته
         register_shutdown_function(function () {
-            static $lastFlush = 0;
+            $lockFile = storage_path('framework/cache/watchlog-apm.lock');
             $now = time();
+            $last = file_exists($lockFile) ? (int) file_get_contents($lockFile) : 0;
 
-            if ($now - $lastFlush >= 10) {
-
+            if ($now - $last >= 10) {
+                file_put_contents($lockFile, $now);
                 $sender = new Sender();
                 $sender->flush();
-
-                $lastFlush = $now;
-
             }
         });
 
