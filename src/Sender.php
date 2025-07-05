@@ -6,9 +6,18 @@ class Sender
 {
     protected string $agentUrl;
 
-    public function __construct(string $agentUrl = 'http://localhost:3774/apm')
+    public function __construct(string $agentUrl = '')
     {
-        $this->agentUrl = $agentUrl;
+        // اگر داخل کوبرنیتیز اجرا می‌شویم، این متغیر ست شده
+        $isKubernetes = !empty(env('KUBERNETES_SERVICE_HOST'));
+
+        // آدرس پیش‌فرض بر اساس محیط
+        $defaultUrl = $isKubernetes
+            ? 'http://watchlog-node-agent:3774/apm'
+            : 'http://127.0.0.1:3774/apm';
+
+        // اگر پارامتر ورودی خالی بود از پیش‌فرض استفاده می‌کنیم
+        $this->agentUrl = $agentUrl !== '' ? $agentUrl : $defaultUrl;
     }
 
     public function flush(): void
@@ -20,9 +29,9 @@ class Sender
         }
 
         $payload = json_encode([
-            'collected_at' => date('c'),
-            'platformName' => 'laravel',
-            'metrics' => $metrics
+            'collected_at'  => date('c'),
+            'platformName'  => 'laravel',
+            'metrics'       => $metrics,
         ]);
 
         try {
@@ -35,7 +44,7 @@ class Sender
             curl_exec($ch);
             curl_close($ch);
         } catch (\Throwable $e) {
-            // ارسال ناموفق، می‌تونی اینجا لاگ بزنی به فایل error مثلا
+            // ارسال ناموفق، می‌تونید لاگ کنید:
             // file_put_contents(storage_path('logs/apm-error.log'), $e->getMessage(), FILE_APPEND);
         }
     }
