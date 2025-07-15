@@ -2,22 +2,70 @@
 
 namespace Watchlog\LaravelAPM;
 
+use Illuminate\Support\Facades\Http;
+
 class Sender
 {
     protected string $agentUrl;
 
+    /** @var bool|null */
+    protected static ?bool $isK8s = null;
+
+    /** @var string|null */
+    protected static ?string $cachedUrl = null;
+
     public function __construct(string $agentUrl = '')
     {
-        // اگر داخل کوبرنیتیز اجرا می‌شویم، این متغیر ست شده
-        $isKubernetes = !empty(env('KUBERNETES_SERVICE_HOST'));
+        $this->agentUrl = $agentUrl !== ''
+            ? $agentUrl
+            : self::detectAgentUrl();
+    }
 
-        // آدرس پیش‌فرض بر اساس محیط
-        $defaultUrl = $isKubernetes
-            ? 'http://watchlog-node-agent:3774/apm'
+    protected static function isRunningInK8s(): bool
+    {
+        if (self::$isK8s !== null) {
+            return self::$isK8s;
+        }
+
+        // روش 1: ServiceAccount Token
+        if (is_file('/var/run/secrets/kubernetes.io/serviceaccount/token')) {
+            return self::$isK8s = true;
+        }
+
+        // روش 2: بررسی cgroup
+        try {
+            $content = file_get_contents('/proc/1/cgroup');
+            if (strpos($content, 'kubepods') !== false) {
+                return self::$isK8s = true;
+            }
+        } catch (\Throwable) {
+            // silent
+        }
+
+        // روش 3: DNS lookup
+        try {
+            $ip = gethostbyname('kubernetes.default.svc.cluster.local');
+            if ($ip !== 'kubernetes.default.svc.cluster.local') {
+                return self::$isK8s = true;
+            }
+        } catch (\Throwable) {
+            // silent
+        }
+
+        return self::$isK8s = false;
+    }
+
+    protected static function detectAgentUrl(): string
+    {
+        if (self::$cachedUrl !== null) {
+            return self::$cachedUrl;
+        }
+
+        self::$cachedUrl = self::isRunningInK8s()
+            ? 'http://watchlog-node-agent.monitoring.svc.cluster.local:3774/apm'
             : 'http://127.0.0.1:3774/apm';
 
-        // اگر پارامتر ورودی خالی بود از پیش‌فرض استفاده می‌کنیم
-        $this->agentUrl = $agentUrl !== '' ? $agentUrl : $defaultUrl;
+        return self::$cachedUrl;
     }
 
     public function flush(): void
@@ -25,27 +73,20 @@ class Sender
         $metrics = Collector::flush();
 
         if (empty($metrics)) {
-            return; // چیزی برای ارسال وجود ندارد
+            return;
         }
 
-        $payload = json_encode([
-            'collected_at'  => date('c'),
-            'platformName'  => 'laravel',
-            'metrics'       => $metrics,
-        ]);
+        $payload = [
+            'collected_at' => now()->toIso8601String(),
+            'platformName' => 'laravel',
+            'metrics'      => $metrics,
+        ];
 
         try {
-            $ch = curl_init($this->agentUrl);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-            curl_exec($ch);
-            curl_close($ch);
-        } catch (\Throwable $e) {
-            // ارسال ناموفق، می‌تونید لاگ کنید:
-            // file_put_contents(storage_path('logs/apm-error.log'), $e->getMessage(), FILE_APPEND);
+            Http::timeout(3)
+                ->post($this->agentUrl, $payload);
+        } catch (\Throwable) {
+            // silent
         }
     }
 }
