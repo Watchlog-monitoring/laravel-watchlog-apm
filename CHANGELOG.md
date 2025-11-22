@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/Watchlog-monitoring/laravel-watchlog-apm/compare/0.1.7...0.2.0) (2025-11-22)
+
+
+### Features
+
+* handle agent url ([59a9a8e](https://github.com/Watchlog-monitoring/laravel-watchlog-apm/commit/59a9a8e40e6d42a70602ce605d58c7b8a6c5ce7a))
+
 ## [0.1.7](https://github.com/Watchlog-monitoring/laravel-watchlog-apm/compare/0.1.6...0.1.7) (2025-07-15)
 
 
