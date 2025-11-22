@@ -48,7 +48,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
 ---
 
-## 🛠️ Service Identification
+## 🛠️ Configuration
+
+### Service Identification
 
 You can define your service name explicitly in `.env`:
 
@@ -61,6 +63,41 @@ If not set, it will fallback to:
 ```env
 APP_NAME=laravel-app
 ```
+
+### Agent URL Configuration
+
+The package automatically detects the agent endpoint, but you can override it for Docker:
+
+**Option 1: Environment Variable (Recommended for Docker)**
+
+```env
+WATCHLOG_APM_AGENT_URL=http://watchlog-agent:3774/apm
+```
+
+**Option 2: Config File**
+
+Publish the config file (if available) or add to your `config/services.php`:
+
+```php
+'watchlog' => [
+    'apm' => [
+        'agent_url' => env('WATCHLOG_APM_AGENT_URL', ''),
+    ],
+],
+```
+
+**Option 3: Direct Usage**
+
+```php
+use Watchlog\LaravelAPM\Sender;
+
+$sender = new Sender('http://watchlog-agent:3774/apm');
+$sender->flush();
+```
+
+If not provided, the package will auto-detect:
+- **Local / non-K8s**: `http://127.0.0.1:3774/apm`
+- **Kubernetes**: `http://watchlog-node-agent.monitoring.svc.cluster.local:3774/apm`
 
 ---
 
@@ -143,6 +180,76 @@ Add the following to your Laravel app's `.gitignore`:
 /storage/logs/apm-debug.log
 /storage/framework/cache/watchlog-apm.lock
 ```
+
+---
+
+## 🐳 Docker Setup
+
+When running your Laravel app in Docker, configure the agent URL:
+
+**Docker Compose Example:**
+```yaml
+version: '3.8'
+
+services:
+  watchlog-agent:
+    image: watchlog/agent:latest
+    container_name: watchlog-agent
+    ports:
+      - "3774:3774"
+    environment:
+      - WATCHLOG_APIKEY=your-api-key
+      - WATCHLOG_SERVER=https://log.watchlog.ir
+    networks:
+      - app-network
+
+  laravel-app:
+    build: .
+    container_name: laravel-app
+    ports:
+      - "8000:8000"
+    environment:
+      - WATCHLOG_APM_AGENT_URL=http://watchlog-agent:3774/apm
+      - WATCHLOG_APM_SERVICE=my-laravel-app
+    depends_on:
+      - watchlog-agent
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+```
+
+**Docker Run Example:**
+```bash
+# 1. Create network
+docker network create app-network
+
+# 2. Run Watchlog Agent
+docker run -d \
+  --name watchlog-agent \
+  --network app-network \
+  -p 3774:3774 \
+  -e WATCHLOG_APIKEY="your-api-key" \
+  -e WATCHLOG_SERVER="https://log.watchlog.ir" \
+  watchlog/agent:latest
+
+# 3. Run Laravel app (set WATCHLOG_APM_AGENT_URL in your .env or docker run)
+docker run -d \
+  --name laravel-app \
+  --network app-network \
+  -p 8000:8000 \
+  -e WATCHLOG_APM_AGENT_URL="http://watchlog-agent:3774/apm" \
+  my-laravel-app
+```
+
+**Important Notes:**
+- When using Docker, use the container name as the hostname (e.g., `watchlog-agent`)
+- Both containers must be on the same Docker network
+- The agent must be running before your app starts
+- Set `WATCHLOG_APM_AGENT_URL` in your `.env` file or as an environment variable
+- If `WATCHLOG_APM_AGENT_URL` is not provided, auto-detection will be used (local or Kubernetes)
 
 ---
 

@@ -46,7 +46,9 @@ class WatchlogAPM
 
             if ($now - $last >= 10) {
                 file_put_contents($lockFile, $now);
-                $sender = new Sender();
+                // Get agent URL from config or environment, fallback to auto-detection
+                $agentUrl = config('watchlog.apm.agent_url') ?? env('WATCHLOG_APM_AGENT_URL', '');
+                $sender = new Sender($agentUrl);
                 $sender->flush();
             }
         });
